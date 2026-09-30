@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.2" />
+    </linearGradient>
+  </defs>
+  <!-- Background Base -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <circle cx="256" cy="256" r="210" fill="url(#glowGrad)" />
+
+  <!-- Shield / Security Base -->
+  <path d="M256 90 L380 140 V240 C380 325 325 395 256 422 C187 395 132 325 132 240 V140 Z" fill="#ffffff" opacity="0.15" />
+  <path d="M256 110 L360 152 V235 C360 306 314 366 256 392 C198 366 152 306 152 235 V152 Z" fill="#ffffff" />
+  
+  <!-- Fingerprint / Time Attendance / Face ID Hybrid Motif -->
+  <!-- Checkmark Badge -->
+  <circle cx="256" cy="250" r="82" fill="#2563eb" />
+  <path d="M222 250 L246 274 L294 226" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+  
+  <!-- Clock ticks / Attendance ring -->
+  <circle cx="256" cy="250" r="105" fill="none" stroke="#60a5fa" stroke-width="6" stroke-dasharray="12 10" />
+  
+  <!-- Bottom Pill Label -->
+  <rect x="156" y="328" width="200" height="38" rx="19" fill="#1e3a8a" />
+  <text x="256" y="353" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="800" fill="#38bdf8" text-anchor="middle" letter-spacing="2">ATTENDANCE</text>
+</svg>

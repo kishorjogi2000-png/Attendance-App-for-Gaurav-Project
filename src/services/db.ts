@@ -20,6 +20,7 @@ import {
   UserRole,
 } from '../types';
 import { DEFAULT_COLUMN_MAPPINGS } from './dataSourceManager';
+import { pushRecordToGoogleSheets } from './googleSheetsAppScript';
 
 const STORAGE_KEY = 'SMART_WORKFORCE_DB_V2';
 
@@ -1070,6 +1071,7 @@ class DatabaseManager {
     });
 
     this.save();
+    pushRecordToGoogleSheets('add_attendance', record);
   }
 
   public updateAttendance(record: AttendanceRecord, userName?: string): void {
@@ -1125,6 +1127,7 @@ class DatabaseManager {
       });
 
       this.save();
+      pushRecordToGoogleSheets('punch_out', { employee_id: employeeId, date, ...punchOutData });
       return record;
     }
     return null;
@@ -1270,6 +1273,7 @@ class DatabaseManager {
     this.data.leaves.unshift(leave);
     this.logAudit('Applied Leave', leave.leave_id, `${leave.employee_name} applied for ${leave.leave_type} (${leave.days_count} days).`, leave.employee_name, 'Employee');
     this.save();
+    pushRecordToGoogleSheets('add_leave', leave);
   }
 
   public updateLeaveStatus(leaveId: string, status: LeaveRecord['status'], remarks?: string, actorName: string = 'HR Admin'): void {
@@ -1288,6 +1292,7 @@ class DatabaseManager {
     this.data.advances.unshift(adv);
     this.logAudit('Requested Advance', adv.advance_id, `${adv.employee_name} requested salary advance of ₹${adv.amount}.`, adv.employee_name, 'Employee');
     this.save();
+    pushRecordToGoogleSheets('add_advance', adv);
   }
 
   public updateAdvanceStatus(advId: string, status: AdvanceRecord['approval_status'], approvedAmount?: number, actorName: string = 'Accounts'): void {
@@ -1306,6 +1311,7 @@ class DatabaseManager {
     this.data.complaints.unshift(comp);
     this.logAudit('Raised Complaint', comp.complaint_id, `${comp.employee_name} filed grievance: "${comp.subject}" [Priority: ${comp.priority}, Confidential: ${comp.confidential}].`, comp.employee_name, 'Employee');
     this.save();
+    pushRecordToGoogleSheets('add_complaint', comp);
   }
 
   public updateComplaintStatus(compId: string, status: ComplaintRecord['status'], resolution?: string, actorName: string = 'HR'): void {

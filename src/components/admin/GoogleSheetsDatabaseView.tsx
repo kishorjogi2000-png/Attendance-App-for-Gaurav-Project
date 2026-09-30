@@ -12,6 +12,12 @@ import {
   ExternalLink,
   ShieldCheck,
   Zap,
+  Code,
+  Copy,
+  Check,
+  Link,
+  Send,
+  HelpCircle,
 } from 'lucide-react';
 import { db } from '../../services/db';
 import {
@@ -22,6 +28,14 @@ import {
   REQUIRED_SHEET_TABS,
   verifyAndCreateMissingSheets,
 } from '../../services/googleWorkspace';
+import {
+  GOOGLE_APPS_SCRIPT_TEMPLATE,
+  getSavedAppsScriptUrl,
+  saveAppsScriptUrl,
+  testAppsScriptConnection,
+  initializeGoogleSheetsViaAppsScript,
+  syncAllToGoogleSheetsViaAppsScript,
+} from '../../services/googleSheetsAppScript';
 
 export const GoogleSheetsDatabaseView: React.FC = () => {
   const settings = db.getSettings();
@@ -38,12 +52,124 @@ export const GoogleSheetsDatabaseView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // Google Apps Script Web App States
+  const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => getSavedAppsScriptUrl());
+  const [appsScriptStatus, setAppsScriptStatus] = useState<'idle' | 'testing' | 'connected' | 'error'>(
+    getSavedAppsScriptUrl() ? 'connected' : 'idle'
+  );
+  const [appsScriptInfo, setAppsScriptInfo] = useState<{
+    spreadsheetName?: string;
+    sheetsList?: string[];
+    latencyMs?: number;
+  }>({});
+  const [isScriptModalOpen, setIsScriptModalOpen] = useState(false);
+  const [scriptCopied, setScriptCopied] = useState(false);
+
   // Check initial token
   useEffect(() => {
     getAccessToken().then((tok) => {
       setGoogleConnected(!!tok);
     });
   }, []);
+
+  const handleCopyScript = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_TEMPLATE);
+      setScriptCopied(true);
+      setTimeout(() => setScriptCopied(false), 3000);
+    }
+  };
+
+  const handleTestAppsScript = async () => {
+    if (!appsScriptUrl.trim()) {
+      setLastError('Please enter your Google Apps Script Web App URL first.');
+      return;
+    }
+    setAppsScriptStatus('testing');
+    setIsLoading(true);
+    setLastError('');
+    try {
+      saveAppsScriptUrl(appsScriptUrl);
+      const res = await testAppsScriptConnection(appsScriptUrl);
+      if (res.success) {
+        setAppsScriptStatus('connected');
+        setAppsScriptInfo({
+          spreadsheetName: res.spreadsheetName,
+          sheetsList: res.sheetsList,
+          latencyMs: res.latencyMs,
+        });
+        const isEcho = appsScriptUrl.includes('script.googleusercontent.com');
+        if (isEcho) {
+          setStatusMessage(`Connected to Google Spreadsheet "${res.spreadsheetName || 'Active'}" (${res.latencyMs}ms)! Tip: Deploy > Manage deployments se main Web app URL (https://script.google.com/macros/s/.../exec) copy karein taaki POST attendance data direct save ho sake.`);
+        } else {
+          setStatusMessage(`Connected to Google Spreadsheet "${res.spreadsheetName || 'Active'}" via Apps Script (${res.latencyMs}ms)!`);
+        }
+      } else {
+        setAppsScriptStatus('error');
+        setLastError(res.message);
+      }
+    } catch (err: any) {
+      setAppsScriptStatus('error');
+      setLastError(err.message || 'Failed to ping Google Apps Script.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInitSheetsViaAppsScript = async () => {
+    if (!appsScriptUrl.trim()) {
+      setLastError('Please enter and test your Google Apps Script Web App URL first.');
+      return;
+    }
+    setIsLoading(true);
+    setStatusMessage('Creating and styling all 8 workforce sheets in your Google Spreadsheet...');
+    try {
+      saveAppsScriptUrl(appsScriptUrl);
+      const res = await initializeGoogleSheetsViaAppsScript(appsScriptUrl);
+      if (res.success) {
+        setStatusMessage(res.message);
+        setAppsScriptStatus('connected');
+        db.logAudit('Initialized Google Sheet Tabs', 'APPS_SCRIPT', 'Created Attendance, Employees, Leaves, Advances, Complaints sheets.');
+      } else {
+        setLastError(res.message);
+      }
+    } catch (err: any) {
+      setLastError(err.message || 'Failed to initialize sheets.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSyncAllViaAppsScript = async () => {
+    if (!appsScriptUrl.trim()) {
+      setLastError('Please enter and test your Google Apps Script Web App URL first.');
+      return;
+    }
+    setIsLoading(true);
+    setStatusMessage('Syncing all employees, attendance, leaves, advances, and complaints to Google Sheets...');
+    try {
+      saveAppsScriptUrl(appsScriptUrl);
+      const bundle = {
+        employees: db.getEmployees(),
+        attendance: db.getAttendance(),
+        leaves: db.getLeaves(),
+        advances: db.getAdvances(),
+        complaints: db.getComplaints(),
+      };
+      const res = await syncAllToGoogleSheetsViaAppsScript(appsScriptUrl, bundle);
+      if (res.success) {
+        setStatusMessage(res.message);
+        setLastSync(new Date().toLocaleTimeString());
+        db.logAudit('Synced All to Google Sheets', 'APPS_SCRIPT_SYNC', 'Bulk synchronized local data to Google Sheets.');
+      } else {
+        setLastError(res.message);
+      }
+    } catch (err: any) {
+      setLastError(err.message || 'Error during full sync to Google Sheets.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleConnectGoogle = async () => {
     setIsLoading(true);
@@ -239,6 +365,152 @@ export const GoogleSheetsDatabaseView: React.FC = () => {
         </div>
       )}
 
+      {/* RECOMMENDED METHOD: Google Apps Script Web App Connector (1-Click Auto Setup) */}
+      <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950/40 border-2 border-emerald-500/40 rounded-2xl p-6 shadow-2xl space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-sm text-white">Google Apps Script Web App Connector</h2>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-extrabold uppercase tracking-wide">
+                  RECOMMENDED • 1-CLICK AUTO SETUP
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Google Sheet me direct script paste karein — ye automatically saari sheets create aur live attendance sync karega.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsScriptModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-bold text-xs flex items-center gap-1.5 transition border border-indigo-400/30 shadow-md"
+            >
+              <Code className="w-3.5 h-3.5" />
+              <span>View & Copy Script (Code.gs)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Input & Action Buttons */}
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-slate-300 text-xs font-bold flex items-center gap-1.5">
+                <Link className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Google Apps Script Web App URL (डिप्लॉय किया गया वेब ऐप लिंक):</span>
+              </label>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                appsScriptStatus === 'connected'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : appsScriptStatus === 'error'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                  : 'bg-slate-800 text-slate-400'
+              }`}>
+                {appsScriptStatus === 'connected' ? '🟢 Live Connected' : appsScriptStatus === 'error' ? '🔴 Connection Failed' : '⚪ Not Connected'}
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="url"
+                value={appsScriptUrl}
+                onChange={(e) => {
+                  setAppsScriptUrl(e.target.value);
+                  saveAppsScriptUrl(e.target.value);
+                }}
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-emerald-400 shadow-inner"
+              />
+              <button
+                type="button"
+                onClick={handleTestAppsScript}
+                disabled={isLoading}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition flex items-center justify-center gap-1.5 shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Test Connection</span>
+              </button>
+            </div>
+
+            {appsScriptInfo.spreadsheetName && (
+              <div className="mt-2 text-[11px] text-emerald-300 flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Connected Spreadsheet: <strong>{appsScriptInfo.spreadsheetName}</strong> ({appsScriptInfo.latencyMs}ms)</span>
+              </div>
+            )}
+          </div>
+
+          {/* 3 Core Quick Action Buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <button
+              type="button"
+              onClick={handleInitSheetsViaAppsScript}
+              disabled={isLoading || !appsScriptUrl}
+              className="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex flex-col items-center justify-center gap-1 shadow-lg shadow-emerald-600/20 border border-emerald-400/40 transition"
+            >
+              <div className="flex items-center gap-1.5">
+                <Plus className="w-4 h-4" />
+                <span>Create All Sheets Now</span>
+              </div>
+              <span className="text-[10px] text-emerald-100 font-normal">
+                Attendance, Leaves, Advances, Complaints auto-created
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSyncAllViaAppsScript}
+              disabled={isLoading || !appsScriptUrl}
+              className="p-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs flex flex-col items-center justify-center gap-1 shadow-lg shadow-indigo-600/20 border border-indigo-400/40 transition"
+            >
+              <div className="flex items-center gap-1.5">
+                <Send className="w-4 h-4" />
+                <span>Sync All App Data to Sheets</span>
+              </div>
+              <span className="text-[10px] text-indigo-100 font-normal">
+                Bulk transfer attendance, users, and requests
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsScriptModalOpen(true)}
+              className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex flex-col items-center justify-center gap-1 border border-slate-700 transition"
+            >
+              <div className="flex items-center gap-1.5">
+                <HelpCircle className="w-4 h-4 text-cyan-400" />
+                <span>Setup Guide & Script Code</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-normal">
+                Step-by-step Hindi & English guide
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* 3 Step Quick Instruction Strip */}
+        <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800/80 text-[11px] text-slate-300 grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 font-bold flex items-center justify-center text-[10px]">1</span>
+            <span>Blank Google Sheet me <strong>Extensions &gt; Apps Script</strong> kholein.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center text-[10px]">2</span>
+            <span>Code.gs paste karke <strong>Deploy &gt; Web app (Anyone)</strong> karein.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-[10px]">3</span>
+            <span>Web App URL yahan paste karke <strong>Create All Sheets</strong> dabayein!</span>
+          </div>
+        </div>
+      </div>
+
       {/* Main Configuration Card */}
       <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -390,6 +662,86 @@ export const GoogleSheetsDatabaseView: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Google Apps Script (Code.gs) Viewer & Instruction Modal */}
+      {isScriptModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden my-6 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="p-5 bg-gradient-to-r from-blue-700 via-indigo-700 to-cyan-600 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Code className="w-5 h-5" />
+                <div>
+                  <h3 className="font-bold text-base">Google Apps Script Backend Code (`Code.gs`)</h3>
+                  <p className="text-xs text-blue-100">Google Spreadsheet me paste karne ke liye complete script</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyScript}
+                  className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 font-bold text-xs flex items-center gap-1.5 hover:bg-slate-100 shadow transition"
+                >
+                  {scriptCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                  <span>{scriptCopied ? 'Code Copied!' : 'Copy Script Code'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsScriptModalOpen(false)}
+                  className="p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Step-by-Step Instructions Strip */}
+            <div className="p-4 bg-slate-950 border-b border-slate-800 text-xs space-y-2 shrink-0">
+              <div className="font-bold text-slate-200 flex items-center gap-2">
+                <span>📋 Setup Steps (सेटअप करने के 4 आसान स्टेप्स):</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-[11px] text-slate-300">
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <strong className="text-cyan-400 block mb-0.5">1. Google Sheet</strong>
+                  Google Drive me jaakar ek Blank Google Sheet banayein.
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <strong className="text-cyan-400 block mb-0.5">2. Apps Script</strong>
+                  Menu me <strong>Extensions &gt; Apps Script</strong> par click karein.
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <strong className="text-cyan-400 block mb-0.5">3. Paste & Deploy</strong>
+                  Ye code paste karein -&gt; <strong>Deploy &gt; New deployment &gt; Web app</strong> (Access: <strong>Anyone</strong>) chunein.
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <strong className="text-emerald-400 block mb-0.5">4. URL Paste Karein</strong>
+                  Mile hue Web App URL ko yahan paste karke <strong>"Create All Sheets"</strong> dabayein!
+                </div>
+              </div>
+            </div>
+
+            {/* Code Box */}
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-950 font-mono text-[11px] text-slate-300 select-all leading-relaxed">
+              <pre className="whitespace-pre-wrap">{GOOGLE_APPS_SCRIPT_TEMPLATE}</pre>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-400">
+                Ye script automatically Attendance, Employees, Leaves, Advances aur Complaints ke tabs create karegi.
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyScript}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 transition"
+              >
+                {scriptCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{scriptCopied ? 'Code Copied to Clipboard!' : 'Copy Code Now'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
